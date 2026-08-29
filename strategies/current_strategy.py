@@ -1,1 +1,73 @@
+"""
+Your current refined strategy:
+- Trend: real swing-structure HH/LL (fractal swings), not raw EMA slope.
+  Only trades with a confirmed uptrend (HH+HL) or downtrend (LH+LL); skips
+  choppy/sideways periods entirely.
+- Setup A (Inside Bar): the MOTHER candle must touch the 9 EMA (pullback to
+  EMA), and the inside (baby) candle forms within its range.
+- Setup B (Marubozu): one of three variants -
+    close=high (bull_close_high), close=low (bear_close_low), or classic
+    full marubozu (negligible wicks both ends) - and the marubozu candle
+    itself must touch the 9 EMA.
+- Entry: breakout of the setup candle's high/low on the next candle.
+- SL: just beyond that candle's low/high (small % buffer).
+- Target: 1:2 risk-reward.
+- Trailing SL: breakeven at 1R, then trail to lock 1R profit once price
+  reaches 1.5R (handled by the shared backtest engine, not here).
+"""
+from .common import ema_series, find_fractal_swings, trend_as_of, touches_ema, is_inside_bar, marubozu_variant
+
+EMA_PERIOD = 9
+SL_BUFFER_PCT = 0.0005
+
+NAME = "Current Strategy (EMA-touch IB/Marubozu + swing HH/LL)"
+
+
+def generate_signals(candles):
+    """Returns dict: index -> signal dict, for the candle at which entry should be evaluated."""
+    closes = [c["close"] for c in candles]
+    emas = ema_series(closes, EMA_PERIOD)
+    swing_highs, swing_lows = find_fractal_swings(candles, arm=2)
+
+    signals = {}
+    n = len(candles)
+    for i in range(EMA_PERIOD + 5, n - 1):
+        trend = trend_as_of(swing_highs, swing_lows, i)
+        if trend is None:
+            continue
+
+        setup_candle = None
+        direction = None
+
+        mother, baby = candles[i - 1], candles[i]
+        # Setup A: inside bar where mother touches EMA
+        if is_inside_bar(mother, baby) and touches_ema(mother, emas[i - 1]):
+            if trend == "up":
+                setup_candle, direction = mother, "long"
+            elif trend == "down":
+                setup_candle, direction = mother, "short"
+
+        # Setup B: marubozu touching EMA (checked on the current candle itself)
+        if setup_candle is None:
+            variant = marubozu_variant(baby)
+            if variant and touches_ema(baby, emas[i]):
+                if variant in ("bull_full", "bull_close_high") and trend == "up":
+                    setup_candle, direction = baby, "long"
+                elif variant in ("bear_full", "bear_close_low") and trend == "down":
+                    setup_candle, direction = baby, "short"
+
+        if setup_candle is None:
+            continue
+
+        entry_level_high = setup_candle["high"]
+        entry_level_low = setup_candle["low"]
+
+        signals[i + 1] = {
+            "direction": direction,
+            "trigger_high": entry_level_high,
+            "trigger_low": entry_level_low,
+            "sl_raw": entry_level_low if direction == "long" else entry_level_high,
+            "sl_buffer_pct": SL_BUFFER_PCT,
+        }
+    return signals
 

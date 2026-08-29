@@ -35,14 +35,17 @@ def find_fractal_swings(candles, arm=2):
     return swing_highs, swing_lows
 
 
-def trend_as_of(swing_highs, swing_lows, idx):
+def trend_as_of(swing_highs, swing_lows, idx, arm=2):
     """
     'up' if the last two confirmed swing highs AND last two confirmed swing
     lows (both fully before idx) are each rising; 'down' if both falling;
     None otherwise (choppy / no clear structure -> skip trading).
+    A swing at index i is only usable once idx > i + arm, since that's when
+    it becomes knowable in real time (it takes `arm` candles after the swing
+    to confirm it as a swing at all).
     """
-    highs = [p for i, p in swing_highs if i < idx]
-    lows = [p for i, p in swing_lows if i < idx]
+    highs = [p for i, p in swing_highs if idx > i + arm]
+    lows = [p for i, p in swing_lows if idx > i + arm]
     if len(highs) < 2 or len(lows) < 2:
         return None
     hh = highs[-1] > highs[-2]

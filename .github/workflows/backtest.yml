@@ -1,0 +1,39 @@
+name: BTCUSD Strategy Backtest
+
+on:
+  workflow_dispatch: {}
+  schedule:
+    # Weekly, Monday 03:00 UTC — refreshes data and re-runs the comparison
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: write
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch historical BTCUSD 5m data (400 days, resumable)
+        run: python fetch_data.py --days 400
+
+      - name: Run strategy comparison backtest
+        run: python run_backtest.py
+
+      - name: Commit data and results
+        run: |
+          git config user.name "btc-backtest-bot"
+          git config user.email "actions@github.com"
+          git add data/ results/ || true
+          git diff --quiet --cached || git commit -m "Update BTCUSD backtest data and results [skip ci]"
+          git push

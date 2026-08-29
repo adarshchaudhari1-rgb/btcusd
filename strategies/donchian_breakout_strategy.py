@@ -1,37 +1,34 @@
 """
-Alternate strategy #1: simple 9/21 EMA crossover, trend-following.
-Long when 9 EMA crosses above 21 EMA; short when it crosses below.
-SL: recent swing low/high (last 5 candles); Target 1:2 (buffer/trailing
-handled by the shared engine, same as the current strategy, for a fair
-apples-to-apples comparison).
+Alternate strategy #2: Donchian channel breakout.
+Long when close breaks above the highest high of the prior N candles;
+short when close breaks below the lowest low of the prior N candles.
+SL: opposite band value at breakout time; Target 1:2 (buffer/trailing
+handled by the shared engine).
 """
-from .common import ema_series
-
-FAST, SLOW = 9, 21
+N = 20
 SL_BUFFER_PCT = 0.0005
-SWING_LOOKBACK = 5
 
-NAME = "EMA 9/21 Crossover (trend-following baseline)"
+NAME = f"Donchian Channel Breakout ({N}-period)"
 
 
 def generate_signals(candles):
-    closes = [c["close"] for c in candles]
-    fast = ema_series(closes, FAST)
-    slow = ema_series(closes, SLOW)
-
     signals = {}
     n = len(candles)
-    for i in range(SLOW + SWING_LOOKBACK + 1, n - 1):
-        if fast[i - 1] is None or slow[i - 1] is None or fast[i] is None or slow[i] is None:
-            continue
-        crossed_up = fast[i - 1] <= slow[i - 1] and fast[i] > slow[i]
-        crossed_down = fast[i - 1] >= slow[i - 1] and fast[i] < slow[i]
-        if not (crossed_up or crossed_down):
+    for i in range(N + 1, n - 1):
+        window = candles[i - N:i]
+        highest = max(c["high"] for c in window)
+        lowest = min(c["low"] for c in window)
+        close = candles[i]["close"]
+
+        direction = None
+        if close > highest:
+            direction = "long"
+        elif close < lowest:
+            direction = "short"
+        if direction is None:
             continue
 
-        window = candles[i - SWING_LOOKBACK:i + 1]
-        direction = "long" if crossed_up else "short"
-        sl_raw = min(c["low"] for c in window) if direction == "long" else max(c["high"] for c in window)
+        sl_raw = lowest if direction == "long" else highest
 
         signals[i + 1] = {
             "direction": direction,
@@ -39,7 +36,6 @@ def generate_signals(candles):
             "trigger_low": candles[i]["low"],
             "sl_raw": sl_raw,
             "sl_buffer_pct": SL_BUFFER_PCT,
-            "immediate_entry": True,  # enter at next candle's open, no breakout needed
+            "immediate_entry": True,
         }
     return signals
-
